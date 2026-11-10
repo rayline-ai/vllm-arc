@@ -9,7 +9,7 @@ encoders with vLLM and runs the release's Stage-1 head next to them.
 > question head, and the decide routes. Stage-1 scoring runs through `vllm_arc.heads`. Interfaces may change without
 > notice.
 
-Weights: [huggingface.co/rayline-ai/ARC-1.0](https://huggingface.co/rayline-ai/ARC-1.0) (coming soon).
+Weights: [huggingface.co/rayline-ai/ARC-1.0](https://huggingface.co/rayline-ai/ARC-1.0) (release `20261111`).
 
 ## What's here
 
