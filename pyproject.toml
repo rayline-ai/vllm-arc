@@ -1,0 +1,35 @@
+[project]
+name = "vllm-arc"
+version = "0.1.0.dev0"
+description = "vLLM plugin that serves Rayline ARC release encoders and runs their Stage-1 head (work in progress)"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Atlas Futures, Inc." }]
+requires-python = ">=3.10"
+# vLLM and torch are deliberately not declared: install them first, as the README describes (a pinned vLLM build
+# with a fork overlay). The plugin itself needs only what that environment already provides.
+dependencies = []
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+heads = ["torch", "safetensors", "numpy"]
+test = ["pytest", "torch"]
+
+[project.urls]
+Repository = "https://github.com/rayline-ai/vllm-arc"
+Weights = "https://huggingface.co/rayline-ai/ARC-1.0"
+
+[project.entry-points."vllm.general_plugins"]
+arc = "vllm_arc:register"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["vllm_arc"]

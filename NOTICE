@@ -1,0 +1,10 @@
+vllm-arc
+Copyright 2026 Atlas Futures, Inc.
+
+This product includes software developed by Atlas Futures, Inc.
+
+This plugin extends vLLM (https://github.com/vllm-project/vllm), licensed under the Apache License 2.0.
+Copyright the vLLM project contributors.
+
+ARC release encoders are derived from Qwen3.5-0.8B (https://huggingface.co/Qwen/Qwen3.5-0.8B) by the Qwen team,
+Alibaba Cloud, licensed under the Apache License 2.0.
