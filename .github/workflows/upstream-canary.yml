@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright 2026 Atlas Futures, Inc.
+# Weekly: does the fork's patch still apply to the newest vLLM release? A red run is the signal to cut a new
+# arc/v<version> branch in the fork (rebase the patch stack), publish its release, and re-pin engine.lock; the
+# locked engine keeps working meanwhile. Also re-runs the CPU tests and the locked compose against today's indexes.
+name: upstream-canary
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: patch applies to the newest vLLM
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - name: locked engine
+        run: python ci/compose_check.py "$RUNNER_TEMP/locked"
+      - name: newest vLLM release
+        run: python ci/compose_check.py --latest "$RUNNER_TEMP/latest"
+
+  cpu-tests:
+    name: CPU tests
+    runs-on: ubuntu-24.04
+    # tests/fixtures/stock_eq_rows.npz holds bfloat16 bits per ATen CPU kernel level; pin a recorded one, so the
+    # recorded-row checks run on every x86-64 runner (AVX-512 ones included) rather than skip.
+    env:
+      ATEN_CPU_CAPABILITY: avx2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple -r ci/requirements-test.txt
+      # The host CPU, for a recorded-row mismatch: runners on one image differ in CPU vendor and model.
+      - run: lscpu | head -20
+      - run: python -m pytest -q

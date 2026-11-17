@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright 2026 Atlas Futures, Inc.
+[project]
+name = "vllm-arc"
+version = "0.1.0"
+description = "vLLM plugin that serves Rayline ARC release encoders and runs their Stage-1 head"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Atlas Futures, Inc." }]
+maintainers = [{ name = "Rayline", email = "team@rayline.ai" }]
+requires-python = ">=3.12"
+# vLLM and torch are deliberately not base dependencies: the qualified engine is vLLM 0.33.0 plus engine.lock's patch,
+# at the lock's exact pins, built as docs/engine.md describes (deploy/install.sh installs this plugin with --no-deps).
+# The plugin itself needs only what that environment provides.
+dependencies = []
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+# The stock vLLM release the plugin is qualified against (engine.lock vllm_version). It is not the whole engine: the
+# load guard (engine/compat.py) also requires engine.lock's patch applied to it, which deploy/install.sh does.
+engine = ["vllm==0.33.0"]
+heads = ["torch", "safetensors", "numpy"]
+# The encoder server's own imports (server/, eq/, engine/images.py); torch, transformers and vLLM come with the engine.
+server = ["fastapi", "uvicorn", "huggingface_hub", "safetensors", "numpy", "pillow"]
+# The CPU test suite; CI installs the same set at exact pins from ci/requirements-test.txt.
+test = ["pytest", "torch", "numpy", "fastapi", "uvicorn", "httpx", "pillow"]
+
+[project.urls]
+Repository = "https://github.com/rayline-ai/vllm-arc"
+Weights = "https://huggingface.co/rayline-ai/ARC-1.0"
+
+[project.entry-points."vllm.general_plugins"]
+arc = "vllm_arc:register"
+
+[project.scripts]
+# The encoder server (vllm_arc/server/, added separately).
+vllm-arc-server = "vllm_arc.server.app:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["vllm_arc", "vllm_arc.*"]
+
+[tool.setuptools.package-data]
+# The engine's lock: the load guard (engine/compat.py) and the image recipe read it, and the engine id's digest
+# covers it. The vLLM patch itself is not shipped here (engine.lock's patch_source).
+"vllm_arc.engine" = ["engine.lock"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

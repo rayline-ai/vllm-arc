@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright 2026 Atlas Futures, Inc.
+# CPU test environment (CI). torch comes from the PyTorch CPU index.
+pytest==9.2.0
+torch==2.15.0
+numpy==2.5.4
+fastapi==0.162.0
+uvicorn==0.54.0
+httpx==0.28.1
+pillow==13.0.0

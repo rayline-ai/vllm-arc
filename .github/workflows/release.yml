@@ -1,0 +1,101 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright 2026 Atlas Futures, Inc.
+# The release build (docs/releasing.md): sdist and wheel from the tagged commit with a pinned, hash-checked build
+# backend (ci/build-constraints.txt) and SOURCE_DATE_EPOCH from the commit, so a rebuild of the same commit gives the
+# same bytes. A tag push vX.Y.Z (equal to pyproject's version) creates the GitHub release with the artifacts and
+# SHA256SUMS; a manual run builds and uploads the workflow artifact only.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build sdist and wheel
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: install the pinned build backend
+        run: python -m pip install --require-hashes -r ci/build-constraints.txt
+      - name: check the tag against the version
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG does not match pyproject version $version (expected v$version)"
+            exit 1
+          fi
+      - name: build
+        run: |
+          umask 022  # the wheel records the modes of the files setuptools copies, which follow the umask
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
+          python -m build --no-isolation --sdist --outdir dist .
+          # setuptools writes the sdist's tar entries with the checkout's file times, owner and umask, and gzip with
+          # the build time. Rewrite it with sorted entries at SOURCE_DATE_EPOCH, root owner, 644/755 modes and a
+          # fixed gzip header (same contents), then build the wheel from that sdist, extracted with its exact modes
+          # (the wheel records file modes; its times already follow SOURCE_DATE_EPOCH).
+          python - dist/*.tar.gz "$RUNNER_TEMP/sdist" <<'EOF'
+          import gzip, io, os, sys, tarfile
+          epoch = int(os.environ["SOURCE_DATE_EPOCH"])
+          path, unpack = sys.argv[1], sys.argv[2]
+          out = io.BytesIO()
+          with tarfile.open(path, "r:gz") as src, tarfile.open(fileobj=out, mode="w", format=tarfile.PAX_FORMAT) as dst:
+              for m in sorted(src.getmembers(), key=lambda m: m.name):
+                  data = src.extractfile(m) if m.isfile() else None
+                  m.mtime, m.uid, m.gid, m.uname, m.gname, m.pax_headers = epoch, 0, 0, "", "", {}
+                  m.mode = 0o755 if m.isdir() or m.mode & 0o100 else 0o644
+                  dst.addfile(m, data)
+          with open(path, "wb") as f, gzip.GzipFile(filename="", fileobj=f, mode="wb", mtime=epoch) as gz:
+              gz.write(out.getvalue())
+          with tarfile.open(path, "r:gz") as src:
+              src.extractall(unpack, filter="tar")
+          EOF
+          python -m build --no-isolation --wheel --outdir dist "$RUNNER_TEMP"/sdist/*/
+      - name: checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist
+      - name: create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd dist
+          sha256sum -c SHA256SUMS
+          # A PEP 440 pre-release (a, b, rc, dev) is published as a GitHub pre-release.
+          prerelease=""
+          case "$TAG" in *a[0-9]*|*b[0-9]*|*rc[0-9]*|*dev[0-9]*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" ./* --verify-tag --title "$TAG" --generate-notes $prerelease

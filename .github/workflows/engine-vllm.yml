@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright 2026 Atlas Futures, Inc.
+# The tests that need the patched vLLM, on CPU: tests/test_patch_0001.py and the vLLM-dependent tests of
+# tests/test_stock_eq_model.py, which skip in ci.yml's CPU tests (no vLLM there). The locked wheel is composed with the
+# fork's patch release by ci/compose_check.py (as ci.yml's engine compose does) and imported from that directory, with
+# CPU torch and the lock's other pins minus the GPU-only distributions. A skip fails this job: a skipped test here
+# means vLLM did not import.
+name: engine-vllm
+
+on:
+  pull_request:
+    paths:
+      - "vllm_arc/engine/**"
+      - "tests/test_patch_0001.py"
+      - "tests/test_stock_eq_model.py"
+      - "ci/compose_check.py"
+      - "deploy/fetch_patches.py"
+      - ".github/workflows/engine-vllm.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  patched-vllm-tests:
+    name: patched vLLM 0.33.0 tests (CPU)
+    runs-on: ubuntu-24.04
+    env:
+      # The recorded EQ fixture's bits are kept per CPU kernel level; pin a recorded one as the CPU test jobs do.
+      ATEN_CPU_CAPABILITY: avx2
+      # Distributions of the lock that are GPU-only (CUDA libraries, kernels) or come from the CPU torch index.
+      GPU_ONLY: '^(nvidia-|cuda-|torch|triton==|flashinfer|tilelang|humming-kernels|quack-kernels|tokenspeed-|pynvvideocodec|nccl|nvtx|fastsafetensors|instanttensor)'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - name: compose (locked wheel + fork patch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python ci/compose_check.py "$RUNNER_TEMP/compose"
+      - name: install CPU torch and the lock's other pins
+        run: |
+          awk '$1 == "pin" {print $2}' vllm_arc/engine/engine.lock > "$RUNNER_TEMP/pins.txt"
+          grep -E '^(torch|torchvision)==' "$RUNNER_TEMP/pins.txt" > "$RUNNER_TEMP/torch.txt"
+          grep -vE "$GPU_ONLY" "$RUNNER_TEMP/pins.txt" > "$RUNNER_TEMP/cpu-pins.txt"
+          python -m pip install --no-deps --index-url https://download.pytorch.org/whl/cpu -r "$RUNNER_TEMP/torch.txt"
+          python -m pip install --no-deps -r "$RUNNER_TEMP/cpu-pins.txt"
+          python -m pip install pytest==9.2.0
+      - name: tests
+        env:
+          PYTHONPATH: ${{ runner.temp }}/compose/site
+        run: |
+          python -m pytest -q -rs tests/test_patch_0001.py tests/test_stock_eq_model.py --junitxml="$RUNNER_TEMP/junit.xml"
+          python -c 'import sys, xml.etree.ElementTree as ET; s = ET.parse(sys.argv[1]).getroot().find("testsuite"); n, k = int(s.get("tests")), int(s.get("skipped")); print(f"{n} tests, {k} skipped"); sys.exit(1 if k or not n else 0)' "$RUNNER_TEMP/junit.xml"
