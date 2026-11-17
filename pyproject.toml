@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright 2026 Atlas Futures, Inc.
 [project]
 name = "vllm-arc"
-version = "0.1.0"
+version = "0.1.1"
 description = "vLLM plugin that serves Rayline ARC release encoders and runs their Stage-1 head"
 readme = "README.md"
 license = "Apache-2.0"

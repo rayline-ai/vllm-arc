@@ -597,25 +597,60 @@ def build(engine_settings: Engine, *, budget: int, max_model_len: int, max_sessi
         owner = body.get("owner") if isinstance(body, dict) else None
         if not isinstance(owner, str) or not owner:
             return JSONResponse({"error": "invalid_owner"}, status_code=422)
-        closed, busy = await state["sessions"].close_owner(owner)
+        try:
+            closed, busy = await state["sessions"].close_owner(owner)
+        except Refused as exc:
+            return JSONResponse({"error": exc.code, **exc.detail}, status_code=exc.status)
         if busy:
             return JSONResponse({"error": "session_busy", "busy": busy}, status_code=409)
         return JSONResponse({"closed": closed})
 
+    # /sleep and /wake_up run one at a time (a wake during a sleep's quiesce would admit a session the sleep then
+    # puts to sleep); this lock is never the session lock, so encodes are not held by it. Each transition runs as its
+    # own task, shielded from the request: a client that disconnects cannot cut a transition short (the engine core
+    # is another process, and a sleep or wake once sent is not retracted), and the lock is held until it ends.
+    transition = asyncio.Lock()
+
+    async def _sleep() -> Any:
+        sessions = state["sessions"]
+        async with transition:
+            if isinstance(sessions, RetainedSessions):
+                # Every retained session's live request ends (its blocks are freed) and new retained encodes are
+                # refused until /wake_up; no engine call is made under the session lock.
+                try:
+                    await sessions.quiesce()
+                except Refused as exc:
+                    return JSONResponse({"error": exc.code, **exc.detail}, status_code=exc.status)
+                try:
+                    await state["engine"].reset_prefix_cache()
+                except BaseException:
+                    sessions.resume()  # the engine was not asked to sleep: serve retained encodes again
+                    raise
+                # A failed sleep leaves retained encodes refused 503 "sleeping" until /wake_up, never admitted onto
+                # an engine that may be asleep.
+                await state["engine"].sleep(level=1)
+                return {"sleeping": True}
+            async with sessions.lock:
+                await sessions.close_all()
+                await state["engine"].reset_prefix_cache()
+                await state["engine"].sleep(level=1)
+            return {"sleeping": True}
+
+    async def _wake_up() -> Any:
+        async with transition:
+            await state["engine"].wake_up()
+            await state["engine"].collective_rpc("arc_check_pinned_memory")
+            if isinstance(state["sessions"], RetainedSessions):
+                state["sessions"].resume()
+            return {"sleeping": False}
+
     @app.post("/sleep")
     async def sleep() -> Any:
-        sessions = state["sessions"]
-        async with sessions.lock:
-            await sessions.close_all()  # a retained session's live request ends (its blocks are freed)
-            await state["engine"].reset_prefix_cache()
-            await state["engine"].sleep(level=1)
-        return {"sleeping": True}
+        return await asyncio.shield(asyncio.ensure_future(_sleep()))
 
     @app.post("/wake_up")
     async def wake_up() -> Any:
-        await state["engine"].wake_up()
-        await state["engine"].collective_rpc("arc_check_pinned_memory")
-        return {"sleeping": False}
+        return await asyncio.shield(asyncio.ensure_future(_wake_up()))
 
     return app
 

@@ -14,9 +14,6 @@ for **retained sessions**, where the engine keeps a session's state between appe
 prefix-cache session route run on unpatched vLLM `0.33.0`.
 
 > **Pre-alpha.** Interfaces may change without notice.
->
-> **Known issue (0.1.0):** on the retained-session route, an engine close that never returns can stall retained
-> encodes. The fix is planned for 0.1.1; see the [changelog](CHANGELOG.md).
 
 Weights: [huggingface.co/rayline-ai/ARC-1.0](https://huggingface.co/rayline-ai/ARC-1.0).
 
@@ -30,7 +27,7 @@ that file. From the release the plugin reads the Stage-1 head (`vllm_arc.heads.l
 
 | vllm-arc | vLLM | vLLM patch (retained sessions only) |
 |---|---|---|
-| 0.1.0 | 0.33.0 (`4ba787ec9959`) | `arc-v0.33.0.patch` from [`rayline-ai/vllm`](https://github.com/rayline-ai/vllm) release [`arc-v0.33.0-1`](https://github.com/rayline-ai/vllm/releases/tag/arc-v0.33.0-1) |
+| 0.1.1 | 0.33.0 (`4ba787ec9959`) | `arc-v0.33.0.patch` from [`rayline-ai/vllm`](https://github.com/rayline-ai/vllm) release [`arc-v0.33.0-1`](https://github.com/rayline-ai/vllm/releases/tag/arc-v0.33.0-1) |
 
 The exact environment, including the vLLM wheel's sha256, the patch file's sha256 and every other distribution's
 version, is pinned in [`vllm_arc/engine/engine.lock`](vllm_arc/engine/engine.lock). Its `patch_source` line names the fork

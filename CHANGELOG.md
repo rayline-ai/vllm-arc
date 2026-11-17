@@ -10,6 +10,17 @@ adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from its fi
 
 ## [Unreleased]
 
+## [0.1.1]
+
+### Fixed
+
+- Retained sessions no longer wait for the engine while holding the session lock. A session's close runs after the
+  lock is released and is bounded by `ARC_VLLM_ADMISSION_WAIT_S` (default 300 s; past it the engine request is
+  aborted). An encode that waits for the lock or a scratch slot past that bound gets 503 `admission_timeout`, and an
+  append starts only after the closes before it have ended. `/sleep` on the retained route refuses new retained
+  encodes (503 `sleeping`) until `/wake_up`, lets appends in flight finish, and closes every session outside the lock.
+  This fixes the known issue in 0.1.0.
+
 ## [0.1.0]
 
 ### Added

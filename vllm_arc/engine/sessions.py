@@ -24,6 +24,8 @@ No vLLM import here: the engine pass is injected, so this runs on CPU in tests.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import os
 import time
 import uuid
 from collections import OrderedDict
@@ -38,6 +40,27 @@ class Refused(Exception):
     def __init__(self, status: int, code: str, **detail) -> None:
         super().__init__(code)
         self.status, self.code, self.detail = status, code, detail
+
+
+#: ``ARC_VLLM_ADMISSION_WAIT_S`` (empty: 300), as the fork server's: the longest an encode waits to be admitted (the
+#: session lock, a scratch slot) before it is refused 503 ``admission_timeout``, and the longest a session's close
+#: waits for the engine before the request is aborted, so a wedged engine call cannot hold every later encode
+#: indefinitely. Above the longest recorded healthy encode (261 s, a 1.01M-token one-shot on L4).
+ADMISSION_WAIT_S = float(os.environ.get("ARC_VLLM_ADMISSION_WAIT_S") or 300)
+
+
+@contextlib.asynccontextmanager
+async def admitted(lock: Any, wait: str, timeout: float | None = None):
+    """``lock`` (an ``asyncio.Lock`` or ``Semaphore``) acquired within ``timeout`` (``ADMISSION_WAIT_S``), or
+    ``Refused(503, "admission_timeout", wait=wait)``; released on exit."""
+    try:
+        await asyncio.wait_for(lock.acquire(), ADMISSION_WAIT_S if timeout is None else timeout)
+    except TimeoutError:
+        raise Refused(503, "admission_timeout", wait=wait) from None
+    try:
+        yield
+    finally:
+        lock.release()
 
 
 @dataclass
@@ -180,7 +203,7 @@ class PrefixCacheSessions:
         server's, for this input) go to ``run`` unread."""
         if len(tokens) > self.pool.max_model_len:
             raise Refused(422, "exceeds_kv_budget", tokens=len(tokens), budget_tokens=self.pool.max_model_len)
-        async with self.scratch:
+        async with admitted(self.scratch, "scratch_slot"):
             self.counters["encodes"] += 1
             self.counters["one_shots"] += 1
             out = await self.run(tokens, offsets, new_salt(), True, images)
@@ -194,7 +217,7 @@ class PrefixCacheSessions:
             # Every append re-sends the whole session, so an earlier input's images would have to be re-sent and
             # re-processed each time: image sessions are served by ``RetainedSessions`` only.
             raise Refused(422, "images_need_retained")
-        async with self.lock:
+        async with admitted(self.lock, "session_lock"):
             if base == 0:
                 if key in self.entries and self.entries[key].busy:
                     return None  # mid-append: 409, as for any busy session

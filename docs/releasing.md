@@ -11,7 +11,7 @@ This follows the practice of other out-of-tree vLLM platform plugins such as vll
 releases each target one vLLM release rather than a range.
 
 - `main` is the line for the vLLM release in `engine.lock` today. Between releases its version is the next one with
-  a `.devN` suffix; at a release it is the released version (now `0.1.0`).
+  a `.devN` suffix; at a release it is the released version (now `0.1.1`).
 - A minor version (`0.Y.0`) starts a line, usually because the supported vLLM release changed. Patch versions
   (`0.Y.Z`) fix a line without changing its vLLM release.
 - When more than one line is maintained (an older vLLM release still deployed), the older line lives on a branch

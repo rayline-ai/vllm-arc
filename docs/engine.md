@@ -88,6 +88,7 @@ positions inside this input. `POST /close {"owner": "client-a"}` ends every sess
 | `ARC_VLLM_GPU_MEMORY` | the fraction of GPU memory vLLM may use | `0.80` |
 | `ARC_VLLM_MAX_SESSIONS` | sessions kept at once; idle ones are dropped least recently used first | `64` |
 | `ARC_VLLM_IDLE_SECONDS` | a session idle this long is closed at the next session encode | `900` |
+| `ARC_VLLM_ADMISSION_WAIT_S` | the longest an encode waits for the session lock or a scratch slot (then 503 `admission_timeout`), and a retained session's close waits for the engine (then the request is aborted) | `300` |
 | `ARC_EQ_ADDON` | EQ (below): a question-head add-on directory or release `<repo>@<tag>` | empty (E12) |
 | `VLLM_ARC_UNLOCKED` | `1` loads on a vLLM the load guard refuses, with a warning; the engine id then ends `+unqualified` | unset |
 | `ARC_EQ_INFLIGHT`, `ARC_EQ_ADMIT_WAIT_S` | EQ's admission: requests in flight, and how long one waits for a slot | `8`, `0.25` |
